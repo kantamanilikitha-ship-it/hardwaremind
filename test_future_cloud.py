@@ -83,4 +83,4 @@ if (
 else:
     print("Memory was not detected in the final context.")
 
-print("============================================================")cd C:\Users\kanta\Desktop\hardwaremind
+print("============================================================")
