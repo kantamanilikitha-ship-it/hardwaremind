@@ -1,6 +1,10 @@
 import streamlit as st
-import requests
 import uuid
+
+from hardware_agent import (
+    investigate_failure,
+    learn_from_confirmed_resolution
+)
 
 # ============================================================
 # PAGE SETUP
@@ -11,14 +15,6 @@ st.set_page_config(
     page_icon="🔧",
     layout="wide"
 )
-
-# FastAPI is running locally on the same laptop.
-# Streamlit itself will be exposed publicly using ngrok.
-API_URL = "http://127.0.0.1:8000"
-
-HEADERS = {
-    "ngrok-skip-browser-warning": "true"
-}
 
 st.title("🔧 AI-Powered Hardware Failure Investigator")
 
@@ -35,27 +31,17 @@ st.subheader("Backend Status")
 
 if st.button("Check Backend Status"):
     try:
-        response = requests.get(
-            f"{API_URL}/health",
-            headers=HEADERS,
-            timeout=15
-        )
+        st.success("HardwareMind backend is available.")
 
-        response.raise_for_status()
+        st.json({
+            "status": "online",
+            "service": "HardwareMind",
+            "memory": "Hindsight",
+            "reasoning": "Groq"
+        })
 
-        try:
-            health_data = response.json()
-        except ValueError:
-            st.error(
-                "Backend responded, but the response was not valid JSON."
-            )
-            st.code(response.text)
-        else:
-            st.success("Backend is reachable!")
-            st.json(health_data)
-
-    except requests.exceptions.RequestException as error:
-        st.error(f"Could not reach backend: {error}")
+    except Exception as error:
+        st.error(f"Backend check failed: {error}")
 
 st.divider()
 
@@ -138,7 +124,7 @@ with st.form("investigation_form"):
     )
 
 # ============================================================
-# INVESTIGATION REQUEST
+# INVESTIGATION
 # ============================================================
 
 if investigate_clicked:
@@ -173,16 +159,7 @@ if investigate_clicked:
                 "Investigating the failure..."
             ):
 
-                response = requests.post(
-                    f"{API_URL}/investigate",
-                    json=payload,
-                    headers=HEADERS,
-                    timeout=120
-                )
-
-                response.raise_for_status()
-
-                result = response.json()
+                result = investigate_failure(payload)
 
             if result.get("success", True):
 
@@ -201,21 +178,15 @@ if investigate_clicked:
             else:
 
                 st.error(
-                    "The backend returned an unsuccessful investigation."
+                    "The investigation was unsuccessful."
                 )
 
                 st.json(result)
 
-        except requests.exceptions.RequestException as error:
+        except Exception as error:
 
             st.error(
-                f"Investigation request failed: {error}"
-            )
-
-        except ValueError:
-
-            st.error(
-                "The backend response was not valid JSON."
+                f"Investigation failed: {error}"
             )
 
 # ============================================================
@@ -322,7 +293,7 @@ if "investigation_result" in st.session_state:
         )
 
     # ========================================================
-    # LEARNING REQUEST
+    # LEARNING
     # ========================================================
 
     if teach_clicked:
@@ -340,35 +311,22 @@ if "investigation_result" in st.session_state:
 
         else:
 
-            learn_payload = {
-                **st.session_state["investigation_payload"],
-
-                "confirmed_root_cause":
-                    confirmed_root_cause.strip(),
-
-                "confirmed_fix":
-                    confirmed_fix.strip(),
-
-                "outcome":
-                    outcome.strip()
-            }
-
             try:
 
                 with st.spinner(
                     "Saving the confirmed resolution..."
                 ):
 
-                    response = requests.post(
-                        f"{API_URL}/learn",
-                        json=learn_payload,
-                        headers=HEADERS,
-                        timeout=120
+                    learn_result = (
+                        learn_from_confirmed_resolution(
+                            st.session_state[
+                                "investigation_payload"
+                            ],
+                            confirmed_root_cause.strip(),
+                            confirmed_fix.strip(),
+                            outcome.strip()
+                        )
                     )
-
-                    response.raise_for_status()
-
-                    learn_result = response.json()
 
                 if learn_result.get("success") is True:
 
@@ -379,19 +337,13 @@ if "investigation_result" in st.session_state:
                 else:
 
                     st.error(
-                        "The backend did not confirm that learning succeeded."
+                        "HardwareMind did not confirm that learning succeeded."
                     )
 
                 st.json(learn_result)
 
-            except requests.exceptions.RequestException as error:
+            except Exception as error:
 
                 st.error(
-                    f"Learning request failed: {error}"
-                )
-
-            except ValueError:
-
-                st.error(
-                    "The backend response was not valid JSON."
+                    f"Learning failed: {error}"
                 )
